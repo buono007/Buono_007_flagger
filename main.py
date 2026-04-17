@@ -1,7 +1,8 @@
 import argparse
 import logging
+import sys
 
-from config import get_config
+from config import resolve_profile_config
 from scraper import fetch_and_save_challenges, scrape_all
 from session import Session
 
@@ -45,9 +46,11 @@ Examples:
     args = parser.parse_args()
 
     try:
-        config = get_config(args.profile)
+        logger.info(f"argv: {sys.argv}")
+        resolved_profile, config = resolve_profile_config(args.profile)
 
-        logger.info(f"Using profile: {args.profile}")
+        logger.info(f"Requested profile: {args.profile}")
+        logger.info(f"Using profile: {resolved_profile}")
         logger.info(f"Connecting to: {config['BASE_URL']}")
 
         session = Session(
@@ -55,7 +58,7 @@ Examples:
             config["EMAIL"],
             config["PASSWORD"],
             rate_limit_delay=args.rate_limit,
-            profile_name=args.profile,
+            profile_name=resolved_profile,
         )
 
         challenges = fetch_and_save_challenges(session)
@@ -75,7 +78,7 @@ Examples:
             challenge_ids=args.challenge_ids,
             update_only=args.update_only,
             max_workers=args.max_workers,
-            profile_name=args.profile,
+            profile_name=resolved_profile,
         )
 
         logger.info("✓ Scraping completed successfully!")

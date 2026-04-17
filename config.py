@@ -2,10 +2,12 @@ import json
 import os
 
 try:
-    from dotenv import load_dotenv
+    from dotenv import load_dotenv as _load_dotenv
 except ModuleNotFoundError:
-    def load_dotenv(*_args, **_kwargs):
+    def _load_dotenv(*_args, **_kwargs) -> bool:
         return False
+
+load_dotenv = _load_dotenv
 
 load_dotenv(override=True)
 
@@ -63,35 +65,44 @@ def get_config(profile_name: str = "default") -> dict:
     Returns:
         Dictionary with BASE_URL, EMAIL, PASSWORD
     """
+    _resolved_profile_name, resolved_config = resolve_profile_config(profile_name)
+    return resolved_config
+
+
+def resolve_profile_config(profile_name: str = "default") -> tuple[str, dict]:
+    """
+    Resolve the effective profile name and configuration.
+
+    Returns:
+        (effective_profile_name, config_dict)
+    """
     profiles = load_profiles()
 
     # Treat "default" as the currently active profile when configured.
     if profile_name == "default":
         active_profile = get_active_profile_name()
         if active_profile in profiles:
-            return profiles[active_profile]
+            return active_profile, profiles[active_profile]
         if "default" in profiles:
-            return profiles["default"]
+            return "default", profiles["default"]
         if len(profiles) == 1:
             # If there is only one profile, use it as the implicit default.
             only_profile_name = next(iter(profiles.keys()))
-            return profiles[only_profile_name]
+            return only_profile_name, profiles[only_profile_name]
         if profiles:
             raise ValueError(
                 f"Active profile '{active_profile}' not found in {PROFILES_FILE}. "
                 "Set a valid active profile with set_active_profile.py or pass --profile explicitly."
             )
 
-    if profile_name in profiles:
-        return profiles[profile_name]
-
-    # Fall back to environment variables for 'default' profile
-    if profile_name == "default":
-        return {
+        return "default", {
             "BASE_URL": BASE_URL,
             "EMAIL": EMAIL,
             "PASSWORD": PASSWORD,
         }
+
+    if profile_name in profiles:
+        return profile_name, profiles[profile_name]
 
     raise ValueError(f"Profile '{profile_name}' not found. Available profiles: check {PROFILES_FILE}")
 

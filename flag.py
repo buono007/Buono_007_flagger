@@ -8,7 +8,7 @@ from typing import Any, Optional
 
 import colorama
 
-from config import get_config
+from config import resolve_profile_config
 from session import Session
 
 
@@ -236,7 +236,7 @@ def main() -> None:
     if challenge_data and isinstance(challenge_data.get("profile"), str) and challenge_data["profile"].strip():
         selected_profile = challenge_data["profile"].strip()
 
-    cfg = get_config(selected_profile)
+    effective_profile, cfg = resolve_profile_config(selected_profile)
     base_url = args.base_url or (challenge_data or {}).get("link") or cfg.get("BASE_URL", "")
 
     if not base_url:
@@ -246,7 +246,7 @@ def main() -> None:
         base_url,
         cfg.get("EMAIL", ""),
         cfg.get("PASSWORD", ""),
-        profile_name=selected_profile,
+        profile_name=effective_profile,
     )
 
     submitter = FlagSubmitter(
