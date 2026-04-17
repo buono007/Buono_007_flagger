@@ -1,6 +1,7 @@
 import logging
 import os
 import time
+import json
 from typing import Any
 
 import colorama
@@ -51,14 +52,25 @@ def _configure_logger() -> None:
 
 _configure_logger()
 
+TOKEN_CACHE_FILE = os.path.join(os.path.dirname(__file__), ".token_cache.json")
+
 
 class Session:
     """
     Session class that authenticates and stores in tokens for requests to the API
     """
 
-    def __init__(self, base_url: str, email: str, password: str, rate_limit_delay: float = 0.5):
+    def __init__(
+        self,
+        base_url: str,
+        email: str,
+        password: str,
+        rate_limit_delay: float = 0.5,
+        profile_name: str = "default",
+    ):
         self.base_url = base_url
+        self.email = email
+        self.profile_name = profile_name
         self.session = requests.Session()
         self.rate_limit_delay = rate_limit_delay
         self.last_request_time = 0
@@ -76,7 +88,64 @@ class Session:
         self.session.mount("http://", adapter)
         self.session.mount("https://", adapter)
 
-        self._login(email, password)
+        if not self._try_restore_tokens():
+            self._login(email, password)
+
+    def _cache_key(self) -> str:
+        return f"{self.profile_name}|{self.base_url}|{self.email}"
+
+    @staticmethod
+    def _load_token_cache() -> dict[str, Any]:
+        if not os.path.exists(TOKEN_CACHE_FILE):
+            return {}
+        try:
+            with open(TOKEN_CACHE_FILE, "r", encoding="utf-8") as handle:
+                data = json.load(handle)
+            return data if isinstance(data, dict) else {}
+        except Exception:
+            return {}
+
+    @staticmethod
+    def _save_token_cache(cache: dict[str, Any]) -> None:
+        with open(TOKEN_CACHE_FILE, "w", encoding="utf-8") as handle:
+            json.dump(cache, handle, indent=2)
+
+    def _store_tokens(self, token: str, files_token: str = "") -> None:
+        self.token_auth = {"authorization": f"Token {token}"}
+        self.token_download = f"=&auth={files_token or ''}"
+
+    def _try_restore_tokens(self) -> bool:
+        cache = self._load_token_cache()
+        entry = cache.get(self._cache_key())
+        if not isinstance(entry, dict):
+            return False
+
+        token = entry.get("token")
+        files_token = entry.get("filesToken", "")
+        if not token:
+            return False
+
+        self._store_tokens(token, files_token)
+
+        try:
+            user_info = self.api_get("currentUser")
+            self.group = user_info.get("group", "")
+            logger.debug("Reused cached login token")
+            return True
+        except requests.RequestException:
+            logger.info("Cached token is invalid or expired, performing fresh login")
+            self.token_auth = {}
+            self.token_download = ""
+            return False
+
+    def _save_current_tokens(self, token: str, files_token: str = "") -> None:
+        cache = self._load_token_cache()
+        cache[self._cache_key()] = {
+            "token": token,
+            "filesToken": files_token or "",
+            "updated_at": int(time.time()),
+        }
+        self._save_token_cache(cache)
 
     def _apply_rate_limit(self):
         """Apply rate limiting between requests"""
@@ -96,8 +165,8 @@ class Session:
         files_token = data.get("filesToken")
         logger.debug(f"Login successful. Received token: {token}, filesToken: {files_token}")
 
-        self.token_auth = {"authorization": f"Token {token}"}
-        self.token_download = f"=&auth={files_token}"
+        self._store_tokens(token, files_token)
+        self._save_current_tokens(token, files_token)
 
         user_info = self.api_get("currentUser")
         logger.debug(f"Fetched user info: {user_info}")

@@ -1,7 +1,9 @@
 import importlib
 import logging
 import os
+import shutil
 import subprocess
+import zipfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Optional
 
@@ -102,7 +104,14 @@ def download_file_safe(session: Session, file_info: dict[str, Any], files_dir: s
         if file_path.lower().endswith(".zip"):
             logger.debug(f"Extracting ZIP file: {file_path}")
             extract_dir = os.path.join(files_dir, os.path.splitext(file_info["name"])[0])
-            subprocess.run(["7z", "x", file_path, f"-o{extract_dir}", "-y"], check=True, capture_output=True)
+            ensure_dir(extract_dir)
+
+            seven_zip = shutil.which("7z")
+            if seven_zip:
+                subprocess.run([seven_zip, "x", file_path, f"-o{extract_dir}", "-y"], check=True, capture_output=True)
+            else:
+                with zipfile.ZipFile(file_path, "r") as archive:
+                    archive.extractall(extract_dir)
         return True
     except Exception as e:
         logger.error(f"Failed to download/extract file {file_info['name']}: {e}")
@@ -114,6 +123,7 @@ def process_challenge(
     challenge: dict[str, Any],
     event: str,
     section: str,
+    profile_name: str,
     update_only: bool = False,
 ) -> bool:
     """
@@ -134,6 +144,7 @@ def process_challenge(
 
         challenge_data = fetch_challenge_data(session, challenge_id)
         challenge_data["link"] = session.base_url
+        challenge_data["profile"] = profile_name
 
         if session.group == "SUPERVISOR":
             challenge_data["hints"] = fetch_challenge_hints(session, challenge_data.get("hints", []))
@@ -168,6 +179,7 @@ def scrape_all(
     challenge_ids: Optional[list[int]] = None,
     update_only: bool = False,
     max_workers: int = 3,
+    profile_name: str = "default",
 ):
     """
     Iterates through all challenges with filtering and concurrent processing.
@@ -209,7 +221,7 @@ def scrape_all(
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = [
-            executor.submit(process_challenge, session, challenge, event_name, section_name, update_only)
+            executor.submit(process_challenge, session, challenge, event_name, section_name, profile_name, update_only)
             for challenge, event_name, section_name in challenges_to_process
         ]
 

@@ -19,6 +19,44 @@ def cprint(message: str, color: str = "") -> None:
     print(f"{color}{message}", flush=True)
 
 
+def read_stdin_realtime() -> str:
+    """Read piped stdin while mirroring it to stdout in real time."""
+    chunks: list[str] = []
+
+    while True:
+        line = sys.stdin.readline()
+        if line == "":
+            break
+        sys.stdout.write(line)
+        sys.stdout.flush()
+        chunks.append(line)
+
+    return "".join(chunks)
+
+
+def discover_challenge_config(explicit_path: Optional[str]) -> tuple[Optional[Path], Optional[dict[str, Any]]]:
+    if explicit_path:
+        path = Path(explicit_path).resolve()
+        with open(path, "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+        if not FlagSubmitter._is_challenge_json(data):
+            raise ValueError(f"Invalid challenge JSON: {path}")
+        cprint(f"Found challenge file: {path.name}", colorama.Fore.GREEN)
+        return path, data
+
+    for path in sorted(Path.cwd().glob("*.json")):
+        try:
+            with open(path, "r", encoding="utf-8") as handle:
+                data = json.load(handle)
+            if FlagSubmitter._is_challenge_json(data):
+                cprint(f"Found challenge file: {path.name}", colorama.Fore.GREEN)
+                return path, data
+        except Exception:
+            continue
+
+    return None, None
+
+
 class FlagSubmitter:
     def __init__(self, session: Session, base_url: str, show_response: bool = False, celebrate_on_success: bool = True):
         self.session = session
@@ -32,26 +70,7 @@ class FlagSubmitter:
         return required.issubset(set(data.keys()))
 
     def find_challenge_config(self, explicit_path: Optional[str]) -> tuple[Optional[Path], Optional[dict[str, Any]]]:
-        if explicit_path:
-            path = Path(explicit_path).resolve()
-            with open(path, "r", encoding="utf-8") as handle:
-                data = json.load(handle)
-            if not self._is_challenge_json(data):
-                raise ValueError(f"Invalid challenge JSON: {path}")
-            cprint(f"Found challenge file: {path.name}", colorama.Fore.GREEN)
-            return path, data
-
-        for path in sorted(Path.cwd().glob("*.json")):
-            try:
-                with open(path, "r", encoding="utf-8") as handle:
-                    data = json.load(handle)
-                if self._is_challenge_json(data):
-                    cprint(f"Found challenge file: {path.name}", colorama.Fore.GREEN)
-                    return path, data
-            except Exception:
-                continue
-
-        return None, None
+        return discover_challenge_config(explicit_path)
 
     @staticmethod
     def update_sent_flags(config_path: Path, data: dict[str, Any], flag: str) -> None:
@@ -154,7 +173,13 @@ class FlagSubmitter:
             cprint("⭐ FLAG CAPTURED! ⭐", colorama.Fore.GREEN)
             cprint("🏆 Well done! 🏆", colorama.Fore.GREEN)
         else:
-            cprint("Flag is incorrect.", colorama.Fore.RED)
+            if self.celebrate_on_success:
+                fail_color = colorama.Style.BRIGHT + colorama.Back.RED + colorama.Fore.WHITE
+                cprint("*" * 52, fail_color)
+                cprint(" FLAG IS INCORRECT ".center(52), fail_color)
+                cprint("*" * 52, fail_color)
+            else:
+                cprint("Flag is incorrect.", colorama.Fore.RED)
 
         if challenge_path and challenge_data is not None:
             self.update_sent_flags(challenge_path, challenge_data, flag)
@@ -200,18 +225,29 @@ def main() -> None:
 
     raw_flag = args.flag
     if not raw_flag and not sys.stdin.isatty():
-        raw_flag = sys.stdin.read()
+        raw_flag = read_stdin_realtime()
     if not raw_flag:
         raise SystemExit("Usage: python flag.py <flag> or pipe input")
 
     flag = normalize_flag(raw_flag, args.no_wrap)
-    cfg = get_config(args.profile)
-    base_url = args.base_url or cfg.get("BASE_URL", "")
+    challenge_path, challenge_data = discover_challenge_config(args.challenge_file)
+
+    selected_profile = args.profile
+    if challenge_data and isinstance(challenge_data.get("profile"), str) and challenge_data["profile"].strip():
+        selected_profile = challenge_data["profile"].strip()
+
+    cfg = get_config(selected_profile)
+    base_url = args.base_url or (challenge_data or {}).get("link") or cfg.get("BASE_URL", "")
 
     if not base_url:
         raise SystemExit("BASE_URL is missing. Set it in profile/env or pass --base-url")
 
-    session = Session(base_url, cfg.get("EMAIL", ""), cfg.get("PASSWORD", ""))
+    session = Session(
+        base_url,
+        cfg.get("EMAIL", ""),
+        cfg.get("PASSWORD", ""),
+        profile_name=selected_profile,
+    )
 
     submitter = FlagSubmitter(
         session=session,
@@ -219,7 +255,7 @@ def main() -> None:
         show_response=args.show_response,
         celebrate_on_success=not args.no_celebrate,
     )
-    submitter.run(flag, args.challenge_id, args.challenge_file)
+    submitter.run(flag, args.challenge_id, str(challenge_path) if challenge_path else args.challenge_file)
 
 
 if __name__ == "__main__":

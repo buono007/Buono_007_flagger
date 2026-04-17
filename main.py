@@ -55,6 +55,7 @@ Examples:
             config["EMAIL"],
             config["PASSWORD"],
             rate_limit_delay=args.rate_limit,
+            profile_name=args.profile,
         )
 
         challenges = fetch_and_save_challenges(session)
@@ -74,6 +75,7 @@ Examples:
             challenge_ids=args.challenge_ids,
             update_only=args.update_only,
             max_workers=args.max_workers,
+            profile_name=args.profile,
         )
 
         logger.info("✓ Scraping completed successfully!")

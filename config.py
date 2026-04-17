@@ -1,7 +1,11 @@
 import json
 import os
 
-from dotenv import load_dotenv
+try:
+    from dotenv import load_dotenv
+except ModuleNotFoundError:
+    def load_dotenv(*_args, **_kwargs):
+        return False
 
 load_dotenv(override=True)
 
@@ -68,6 +72,15 @@ def get_config(profile_name: str = "default") -> dict:
             return profiles[active_profile]
         if "default" in profiles:
             return profiles["default"]
+        if len(profiles) == 1:
+            # If there is only one profile, use it as the implicit default.
+            only_profile_name = next(iter(profiles.keys()))
+            return profiles[only_profile_name]
+        if profiles:
+            raise ValueError(
+                f"Active profile '{active_profile}' not found in {PROFILES_FILE}. "
+                "Set a valid active profile with set_active_profile.py or pass --profile explicitly."
+            )
 
     if profile_name in profiles:
         return profiles[profile_name]
