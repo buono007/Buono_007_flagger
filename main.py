@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 def main():
+    print("Script salvato interamente su https://github.com/buono007/Buono_007_flagger")
     parser = argparse.ArgumentParser(
         description="Scrape olympiad challenges from the server",
         formatter_class=argparse.RawDescriptionHelpFormatter,

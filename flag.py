@@ -221,6 +221,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    print("Script salvato interamente su https://github.com/buono007/Buono_007_flagger")
     args = parse_args()
 
     raw_flag = args.flag

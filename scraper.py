@@ -251,3 +251,7 @@ def scrape_all(
         for error in stats["errors"][:5]:
             logger.info(f"  - {error}")
     logger.info(f"{'=' * 50}\n")
+
+
+if __name__ == "__main__":
+    print("Script salvato interamente su https://github.com/buono007/Buono_007_flagger")
